@@ -1,0 +1,57 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          N=$(ls *.zip 2>/dev/null | wc -l)
+          if [ "$N" -ne 1 ]; then echo "ERROR: the repo root must contain exactly ONE .zip file (found $N)."; ls *.zip; exit 1; fi
+          unzip -q -o ./*.zip -d _proj
+          CS=$(find _proj -name CHECKSUMS.sha256 | head -1)
+          ROOT=$(dirname "$CS")
+          echo "PROJ_ROOT=$ROOT" >> "$GITHUB_ENV"
+          ls -la "$ROOT"
+
+      - name: Verify files were not modified
+        run: |
+          cd "$PROJ_ROOT"
+          sha256sum -c CHECKSUMS.sha256 --quiet
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: |
+          cd "$PROJ_ROOT/android-wrapper"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/out/app-debug.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EPI-CALCULATOR
+          path: out/app-debug.apk
+          if-no-files-found: error
